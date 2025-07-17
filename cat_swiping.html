@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cat Swipe</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; background: linear-gradient(135deg, #87CEEB, #E0F7FA); min-height: 100vh; display: flex; justify-content: center; align-items: center; }
+        .app { max-width: 400px; width: 100%; padding: 20px; }
+        .header { text-align: center; color: #333; margin-bottom: 20px; }
+        .progress { background: rgba(0,0,0,0.1); height: 8px; border-radius: 4px; margin-bottom: 10px; }
+        .progress-bar { height: 100%; background: linear-gradient(90deg, #4ecdc4, #44a08d); border-radius: 4px; transition: width 0.3s; }
+        .counter { text-align: center; color: #333; margin-bottom: 10px; }
+        .swipe-container { position: relative; height: 500px; margin-bottom: 20px; }
+        .cat-card { position: absolute; width: 100%; height: 100%; background: white; border-radius: 15px; overflow: hidden; box-shadow: 0 5px 15px rgba(0,0,0,0.1); transition: transform 0.3s; }
+        .cat-image { width: 100%; height: 100%; object-fit: cover; }
+        .controls { display: flex; justify-content: center; gap: 30px; }
+        .control-btn { width: 60px; height: 60px; border-radius: 50%; border: none; font-size: 24px; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.1); transition: transform 0.2s; }
+        .control-btn:active { transform: scale(0.95); }
+        .dislike { background: linear-gradient(45deg, #ff6b6b, #ff5252); color: white; }
+        .like { background: linear-gradient(45deg, #4ecdc4, #44a08d); color: white; }
+        .summary { display: none; text-align: center; color: #333; }
+        .liked-cats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 20px 0; }
+        .liked-cat img { width: 100%; height: 100px; object-fit: cover; border-radius: 10px; }
+        .restart-btn { background: linear-gradient(45deg, #87CEEB, #00B4DB); color: white; border: none; padding: 10px 20px; border-radius: 20px; cursor: pointer; margin-top: 20px; }
+        .swipe-indicator { position: absolute; top: 20px; font-size: 24px; font-weight: bold; opacity: 0; transition: opacity 0.3s; }
+        .like-indicator { right: 20px; color: #4ecdc4; }
+        .dislike-indicator { left: 20px; color: #ff6b6b; }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <div class="header">
+            <h1>🐱 Cat Swipe</h1>
+            <p>Swipe right to like, left to dislike</p>
+        </div>
+        <div class="progress"><div class="progress-bar" id="progress"></div></div>
+        <div class="counter" id="counter">Cat 1 of 10</div>
+        <div class="swipe-container" id="swipeContainer">
+            <div class="cat-card" id="catCard">Loading...</div>
+            <div class="swipe-indicator like-indicator">LIKE</div>
+            <div class="swipe-indicator dislike-indicator">DISLIKE</div>
+        </div>
+        <div class="controls">
+            <button class="control-btn dislike" id="dislike">✕</button>
+            <button class="control-btn like" id="like">♥</button>
+        </div>
+        <div class="summary" id="summary">
+            <h2>🎉 Done!</h2>
+            <div id="stats"></div>
+            <div id="likedCats"></div>
+            <button class="restart-btn" id="restart">Start Over</button>
+        </div>
+    </div>
+
+    <script>
+        class CatSwipe {
+            constructor() {
+                this.cats = [];
+                this.currentIndex = 0;
+                this.liked = [];
+                this.total = 10;
+                this.touchStartX = 0;
+                this.init();
+            }
+
+            init() {
+                this.elements = {
+                    card: document.getElementById('catCard'),
+                    progress: document.getElementById('progress'),
+                    counter: document.getElementById('counter'),
+                    like: document.getElementById('like'),
+                    dislike: document.getElementById('dislike'),
+                    summary: document.getElementById('summary'),
+                    stats: document.getElementById('stats'),
+                    likedCats: document.getElementById('likedCats'),
+                    restart: document.getElementById('restart'),
+                    likeIndicator: document.querySelector('.like-indicator'),
+                    dislikeIndicator: document.querySelector('.dislike-indicator')
+                };
+                
+                this.setupEvents();
+                this.loadCats();
+            }
+
+            setupEvents() {
+                this.elements.like.addEventListener('click', () => this.swipe('like'));
+                this.elements.dislike.addEventListener('click', () => this.swipe('dislike'));
+                this.elements.restart.addEventListener('click', () => this.reset());
+                
+                // Touch events
+                this.elements.card.addEventListener('touchstart', (e) => {
+                    this.touchStartX = e.touches[0].clientX;
+                });
+                
+                this.elements.card.addEventListener('touchmove', (e) => {
+                    const touchX = e.touches[0].clientX;
+                    const diff = touchX - this.touchStartX;
+                    this.elements.card.style.transform = `translateX(${diff}px) rotate(${diff * 0.1}deg)`;
+                    
+                    // Show indicators
+                    if (diff > 50) {
+                        this.elements.likeIndicator.style.opacity = Math.min(diff / 100, 1);
+                        this.elements.dislikeIndicator.style.opacity = 0;
+                    } else if (diff < -50) {
+                        this.elements.dislikeIndicator.style.opacity = Math.min(-diff / 100, 1);
+                        this.elements.likeIndicator.style.opacity = 0;
+                    } else {
+                        this.elements.likeIndicator.style.opacity = 0;
+                        this.elements.dislikeIndicator.style.opacity = 0;
+                    }
+                });
+                
+                this.elements.card.addEventListener('touchend', (e) => {
+                    const touchEndX = e.changedTouches[0].clientX;
+                    const diff = touchEndX - this.touchStartX;
+                    
+                    if (diff > 100) {
+                        this.swipe('like');
+                    } else if (diff < -100) {
+                        this.swipe('dislike');
+                    } else {
+                        this.elements.card.style.transform = '';
+                    }
+                    
+                    this.elements.likeIndicator.style.opacity = 0;
+                    this.elements.dislikeIndicator.style.opacity = 0;
+                });
+                
+                // Mouse events
+                this.elements.card.addEventListener('mousedown', (e) => {
+                    this.touchStartX = e.clientX;
+                    this.isDragging = true;
+                });
+                
+                this.elements.card.addEventListener('mousemove', (e) => {
+                    if (!this.isDragging) return;
+                    const mouseX = e.clientX;
+                    const diff = mouseX - this.touchStartX;
+                    this.elements.card.style.transform = `translateX(${diff}px) rotate(${diff * 0.1}deg)`;
+                    
+                    // Show indicators
+                    if (diff > 50) {
+                        this.elements.likeIndicator.style.opacity = Math.min(diff / 100, 1);
+                        this.elements.dislikeIndicator.style.opacity = 0;
+                    } else if (diff < -50) {
+                        this.elements.dislikeIndicator.style.opacity = Math.min(-diff / 100, 1);
+                        this.elements.likeIndicator.style.opacity = 0;
+                    } else {
+                        this.elements.likeIndicator.style.opacity = 0;
+                        this.elements.dislikeIndicator.style.opacity = 0;
+                    }
+                });
+                
+                this.elements.card.addEventListener('mouseup', (e) => {
+                    if (!this.isDragging) return;
+                    const mouseX = e.clientX;
+                    const diff = mouseX - this.touchStartX;
+                    
+                    if (diff > 100) {
+                        this.swipe('like');
+                    } else if (diff < -100) {
+                        this.swipe('dislike');
+                    } else {
+                        this.elements.card.style.transform = '';
+                    }
+                    
+                    this.elements.likeIndicator.style.opacity = 0;
+                    this.elements.dislikeIndicator.style.opacity = 0;
+                    this.isDragging = false;
+                });
+                
+                this.elements.card.addEventListener('mouseleave', () => {
+                    if (this.isDragging) {
+                        this.elements.card.style.transform = '';
+                        this.elements.likeIndicator.style.opacity = 0;
+                        this.elements.dislikeIndicator.style.opacity = 0;
+                        this.isDragging = false;
+                    }
+                });
+            }
+
+            async loadCats() {
+                this.cats = Array(this.total).fill().map(() => ({
+                    img: `https://cataas.com/cat?${Math.random()}`,
+                    id: Math.random().toString(36).slice(2)
+                }));
+                this.showCat();
+            }
+
+            showCat() {
+                if (this.currentIndex >= this.total) return this.showResults();
+                
+                const cat = this.cats[this.currentIndex];
+                this.elements.card.innerHTML = `<img class="cat-image" src="${cat.img}">`;
+                
+                this.elements.progress.style.width = `${(this.currentIndex / this.total) * 100}%`;
+                this.elements.counter.textContent = `Cat ${this.currentIndex + 1} of ${this.total}`;
+            }
+
+            swipe(action) {
+                if (action === 'like') this.liked.push(this.cats[this.currentIndex]);
+                this.currentIndex++;
+                
+                this.elements.card.style.transform = `translateX(${action === 'like' ? 1000 : -1000}px)`;
+                this.elements.card.style.opacity = '0';
+                
+                setTimeout(() => {
+                    this.elements.card.style.transform = '';
+                    this.elements.card.style.opacity = '1';
+                    this.showCat();
+                }, 300);
+            }
+
+            showResults() {
+                document.querySelector('.swipe-container').style.display = 'none';
+                document.querySelector('.controls').style.display = 'none';
+                this.elements.summary.style.display = 'block';
+                
+                this.elements.stats.innerHTML = `You liked ${this.liked.length} cats`;
+                
+                this.elements.likedCats.innerHTML = this.liked.length ? `
+                    <div class="liked-cats">
+                        ${this.liked.map(cat => `
+                            <div class="liked-cat">
+                                <img src="${cat.img}">
+                            </div>
+                        `).join('')}
+                    </div>
+                ` : `<p>No cats liked!</p>`;
+            }
+
+            reset() {
+                this.currentIndex = 0;
+                this.liked = [];
+                this.elements.summary.style.display = 'none';
+                document.querySelector('.swipe-container').style.display = 'block';
+                document.querySelector('.controls').style.display = 'flex';
+                this.loadCats();
+            }
+        }
+
+        new CatSwipe();
+    </script>
+</body>
+</html>
